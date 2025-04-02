@@ -4,9 +4,9 @@ import time
 from datetime import datetime
 import os
 
-def contador_almendras_chroma():
+def contar_almendras():
     # Inicializar webcam
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     if not cap.isOpened():
         print("Error: No se pudo abrir la webcam.")
         return
@@ -19,24 +19,6 @@ def contador_almendras_chroma():
     if not os.path.exists('resultados'):
         os.makedirs('resultados')
     
-    # Parámetros para procesamiento de imagen
-    min_area = 100       # Área mínima para considerar un objeto
-    max_area = 5000      # Área máxima para considerar un objeto
-    usar_watershed = True
-    
-    # Parámetros para filtro de color verde (HSV)
-    # Valores predeterminados para un rango de verde típico de chroma
-    lower_green = np.array([35, 50, 50])
-    upper_green = np.array([85, 255, 255])
-    
-    # Variables para estadísticas
-    total_objetos = 0
-    conteo_maximo = 0
-    tiempo_inicio = time.time()
-    
-    # Controles de visualización
-    mostrar_mascara = False
-    
     # Región de interés (ROI) para contar
     roi_definida = False
     seleccionando_roi = False
@@ -44,15 +26,24 @@ def contador_almendras_chroma():
     roi_fin = (0, 0)
     roi = None
     
-    print("\n== CONTADOR DE ALMENDRAS (CHROMA) ==")
+    # Variables para estadísticas
+    total_objetos = 0
+    conteo_maximo = 0
+    tiempo_inicio = time.time()
+    
+    # Parámetros optimizados para almendras
+    min_area = 100
+    max_area = 10000
+    excentricidad_min = 0.5  # Para reconocer formas ovaladas
+    
+    print("\n== CONTADOR AVANZADO DE ALMENDRAS ==")
     print("Seleccione el área donde se encuentran las almendras (clic y arrastre)")
     print("\nControles:")
     print("  'q' - Salir")
     print("  'r' - Redefinir área de conteo")
-    print("  'w' - Activar/desactivar separación de objetos agrupados")
-    print("  'm' - Mostrar/ocultar máscara de chroma")
+    print("  's' - Guardar captura")
     print("  'c' - Reiniciar contador")
-    print("======================\n")
+    print("===================================\n")
     
     # Callback para selección de ROI
     def mouse_callback(event, x, y, flags, param):
@@ -92,7 +83,6 @@ def contador_almendras_chroma():
             cv2.putText(frame, "Seleccione área de conteo (clic y arrastre)", 
                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            # Dibujar ROI mientras se selecciona
             if seleccionando_roi:
                 x1, y1 = roi_inicio
                 x2, y2 = roi_fin
@@ -106,116 +96,103 @@ def contador_almendras_chroma():
             
             continue
         
-        # Fase 2: Procesamiento de imagen y conteo
-        # Extraer región de interés
+        # Fase 2: Procesamiento y conteo
         x1, y1, x2, y2 = roi
         roi_img = frame[y1:y2, x1:x2].copy()
         
-        # PREPROCESAMIENTO MEJORADO PARA CHROMA VERDE:
+        # Preprocesamiento mejorado
+        # 1. Normalización de iluminación
+        lab = cv2.cvtColor(roi_img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge((l, a, b))
+        roi_normalizado = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         
-        # 1. Convertir a HSV para mejor separación de color
-        hsv = cv2.cvtColor(roi_img, cv2.COLOR_BGR2HSV)
+        # 2. Conversión a escala de grises y desenfoque
+        gray = cv2.cvtColor(roi_normalizado, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # 2. Crear máscara para el fondo verde
-        mask_green = cv2.inRange(hsv, lower_green, upper_green)
+        # 3. Binarización adaptativa (funciona mejor para condiciones variables)
+        binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                     cv2.THRESH_BINARY_INV, 21, 5)
         
-        # 3. Invertir la máscara para obtener los objetos (no el fondo)
-        mask_objects = cv2.bitwise_not(mask_green)
+        # 4. Operaciones morfológicas para limpiar ruido
+        kernel = np.ones((3, 3), np.uint8)
+        opening = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+        closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel, iterations=2)
         
-        # 4. Eliminar ruido de la máscara
-        kernel = np.ones((3,3), np.uint8)
-        mask_clean = cv2.morphologyEx(mask_objects, cv2.MORPH_OPEN, kernel, iterations=1)
-        mask_clean = cv2.morphologyEx(mask_clean, cv2.MORPH_CLOSE, kernel, iterations=1)
+        # Implementación avanzada de watershed para separar objetos agrupados
+        # 1. Transformación de distancia (para encontrar centros)
+        dist = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
         
-        # 5. Aplicar la máscara a la imagen original si se desea visualizar
-        if mostrar_mascara:
-            # Convertir máscara a 3 canales para visualización
-            mask_display = cv2.cvtColor(mask_clean, cv2.COLOR_GRAY2BGR)
-            roi_procesada = mask_display
-        else:
-            # Extraer solo los objetos (almendras) del fondo verde
-            roi_procesada = roi_img.copy()
-            # Crear fondo negro
-            bg_black = np.zeros_like(roi_procesada)
-            # Colocar objetos sobre fondo negro
-            roi_procesada = cv2.bitwise_and(roi_img, roi_img, mask=mask_clean)
+        # 2. Normalización para visualización uniforme
+        cv2.normalize(dist, dist, 0, 1.0, cv2.NORM_MINMAX)
         
-        # 6. Mejorar contraste para detección de bordes
-        gray = cv2.cvtColor(roi_procesada, cv2.COLOR_BGR2GRAY)
+        # 3. Umbralización para encontrar marcadores de objetos
+        dist_thresh = 0.4  # Valor optimizado para almendras
+        _, sure_fg = cv2.threshold(dist, dist_thresh, 1.0, cv2.THRESH_BINARY)
+        sure_fg = np.uint8(sure_fg * 255)
         
-        # 7. Aplicar ecualización de histograma adaptativa para mejorar contraste local
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        gray_eq = clahe.apply(gray)
+        # 4. Encontrar zonas desconocidas
+        sure_bg = cv2.dilate(closing, kernel, iterations=3)
+        unknown = cv2.subtract(sure_bg, sure_fg)
         
-        # 8. Usar umbral adaptativo para mejor binarización
-        binary = cv2.adaptiveThreshold(gray_eq, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                     cv2.THRESH_BINARY_INV, 11, 2)
+        # 5. Etiquetado de componentes
+        _, markers = cv2.connectedComponents(sure_fg)
         
-        # Tratamiento para separar almendras agrupadas
-        if usar_watershed:
-            # Transformación de distancia para separar objetos agrupados
-            dist = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-            cv2.normalize(dist, dist, 0, 1.0, cv2.NORM_MINMAX)
-            
-            # Umbral adaptativo basado en la forma típica de almendras
-            # (Almendras tienden a ser ovaladas, así que usamos un umbral que preserve esa forma)
-            _, markers = cv2.threshold(dist, 0.3, 1.0, cv2.THRESH_BINARY)
-            markers = np.uint8(markers * 255)
-            
-            # Dilatar marcadores levemente para asegurar al menos un marcador por objeto
-            markers = cv2.dilate(markers, kernel, iterations=1)
-            
-            # Crear marcadores para watershed
-            contornos_marcadores, _ = cv2.findContours(markers, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            markers_watershed = np.zeros(gray.shape, dtype=np.int32)
-            
-            # Dibujar los marcadores
-            for i, contorno in enumerate(contornos_marcadores):
-                cv2.drawContours(markers_watershed, [contorno], -1, i+1, -1)
-            
-            # Asegurarse de tener un fondo
-            background = cv2.dilate(binary, kernel, iterations=3)
-            bg_contornos, _ = cv2.findContours(background, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for c in bg_contornos:
-                cv2.drawContours(markers_watershed, [c], -1, 1, 3)
-            
-            # Aplicar watershed
-            cv2.watershed(roi_procesada, markers_watershed)
-            
-            # Encontrar contornos de objetos separados
-            contornos = []
-            for i in range(2, np.max(markers_watershed) + 1):
-                mask = np.zeros_like(gray)
-                mask[markers_watershed == i] = 255
-                obj_contornos, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                contornos.extend(obj_contornos)
-        else:
-            # Método simple: encontrar contornos directamente
-            contornos, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # 6. Añadir 1 a todos para reservar 0 para watershed
+        markers = markers + 1
+        markers[unknown == 255] = 0
         
-        # Filtrar contornos por área y forma
-        contornos_filtrados = []
-        for contorno in contornos:
-            area = cv2.contourArea(contorno)
-            if min_area < area < max_area:
-                # Calcular proporción de aspecto para identificar formas similares a almendras
-                x, y, w, h = cv2.boundingRect(contorno)
-                aspect_ratio = float(w) / h if h > 0 else 0
-                
-                # Almendras típicamente tienen proporción de aspecto entre 0.5 y 2.0
-                if 0.3 < aspect_ratio < 3.0:
-                    contornos_filtrados.append(contorno)
+        # 7. Aplicar watershed
+        markers = cv2.watershed(roi_normalizado, markers)
         
-        # Actualizar conteo
-        total_objetos = len(contornos_filtrados)
-        conteo_maximo = max(conteo_maximo, total_objetos)
-        
-        # Crear imagen para visualización final
+        # Preparar imagen de visualización
         roi_visualizacion = roi_img.copy()
         
-        # Dibujar contornos y enumerar objetos
-        for i, contorno in enumerate(contornos_filtrados):
-            # Obtener centro aproximado
+        # Crear una máscara para los objetos encontrados
+        objetos_mask = np.zeros_like(gray)
+        objetos_mask[markers > 1] = 255
+        
+        # Encontrar contornos de objetos 
+        contornos, _ = cv2.findContours(objetos_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Filtrar contornos y analizar formas
+        almendras_detectadas = []
+        
+        for contorno in contornos:
+            area = cv2.contourArea(contorno)
+            
+            # Filtrar por área
+            if min_area <= area <= max_area:
+                # Análisis de forma para identificar almendras
+                # Las almendras son generalmente ovaladas
+                
+                # Encontrar el rectángulo rotado mínimo
+                rect = cv2.minAreaRect(contorno)
+                ancho, alto = rect[1]
+                
+                # Evitar división por cero
+                if min(ancho, alto) > 0:
+                    # Calcular relación de aspecto (largo/ancho)
+                    aspect_ratio = max(ancho, alto) / min(ancho, alto)
+                    
+                    # Calcular excentricidad aproximada (0=círculo, 1=línea)
+                    excentricidad = np.sqrt(1 - (min(ancho, alto) / max(ancho, alto))**2)
+                    
+                    # Las almendras típicamente tienen excentricidad entre 0.5 y 0.9
+                    # y relación de aspecto entre 1.5 y 3.0
+                    if excentricidad >= excentricidad_min and 1.5 <= aspect_ratio <= 4.0:
+                        almendras_detectadas.append(contorno)
+        
+        # Actualizar conteo
+        total_objetos = len(almendras_detectadas)
+        conteo_maximo = max(conteo_maximo, total_objetos)
+        
+        # Dibujar y numerar almendras detectadas
+        for i, contorno in enumerate(almendras_detectadas):
+            # Calcular el centro
             M = cv2.moments(contorno)
             if M["m00"] != 0:
                 cX = int(M["m10"] / M["m00"])
@@ -223,23 +200,25 @@ def contador_almendras_chroma():
             else:
                 cX, cY = 0, 0
             
-            # Dibujar contorno y centro
+            # Dibujar contorno con color
             cv2.drawContours(roi_visualizacion, [contorno], -1, (0, 255, 0), 2)
+            
+            # Dibujar círculo en el centro
             cv2.circle(roi_visualizacion, (cX, cY), 5, (255, 0, 0), -1)
             
-            # Enumerar objeto
+            # Numerar cada almendra
             cv2.putText(roi_visualizacion, str(i+1), (cX - 10, cY - 10),
                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.putText(roi_visualizacion, str(i+1), (cX - 10, cY - 10),
                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
         
-        # Insertar ROI procesada en el frame original
+        # Colocar la ROI procesada en el frame
         frame[y1:y2, x1:x2] = roi_visualizacion
         
-        # Dibujar rectángulo ROI
+        # Dibujar rectángulo de la ROI
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
-        # Mostrar texto con conteo actual
+        # Mostrar conteo en la parte superior
         cv2.putText(frame, f"Almendras: {total_objetos}", (x1, y1 - 10),
                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4)
         cv2.putText(frame, f"Almendras: {total_objetos}", (x1, y1 - 10),
@@ -254,8 +233,8 @@ def contador_almendras_chroma():
         # Línea divisoria
         cv2.line(panel, (0, 0), (ancho, 0), (200, 200, 200), 2)
         
-        # Texto informativo
-        cv2.putText(panel, "CONTADOR DE ALMENDRAS", (ancho//2 - 160, 30), 
+        # Título
+        cv2.putText(panel, "CONTADOR DE ALMENDRAS", (ancho//2 - 140, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
         # Conteo actual y máximo
@@ -265,23 +244,14 @@ def contador_almendras_chroma():
         cv2.putText(panel, f"Conteo máximo: {conteo_maximo}", (ancho//2 + 30, 70), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 255), 2)
         
-        # Modo de separación y visualización
-        modo_sep = "Separación: ACTIVADA" if usar_watershed else "Separación: DESACTIVADA"
-        modo_vis = "Modo: MÁSCARA" if mostrar_mascara else "Modo: NORMAL"
-        
-        cv2.putText(panel, modo_sep, (30, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        
-        cv2.putText(panel, modo_vis, (250, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        
         # Tiempo y FPS
-        fps = 1.0 / max(0.001, time.time() - tiempo_frame)
         tiempo_actual = time.time() - tiempo_inicio
         mins = int(tiempo_actual // 60)
         segs = int(tiempo_actual % 60)
+        fps = 1.0 / max(0.001, time.time() - tiempo_frame)
         
-        cv2.putText(panel, f"Tiempo: {mins:02d}:{segs:02d} | FPS: {fps:.1f}", (ancho - 280, 30),
+        tiempo_texto = f"Tiempo: {mins:02d}:{segs:02d} | FPS: {fps:.1f}"
+        cv2.putText(panel, tiempo_texto, (ancho - 280, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
         
         # Combinar frame y panel
@@ -293,18 +263,17 @@ def contador_almendras_chroma():
         # Procesar teclas
         key = cv2.waitKey(1) & 0xFF
         
-        if key == ord('q'):
+        if key == ord('q'):  # Salir
             break
-        elif key == ord('r'):
+        elif key == ord('r'):  # Redefinir ROI
             roi_definida = False
             print("Redefiniendo área de conteo...")
-        elif key == ord('w'):
-            usar_watershed = not usar_watershed
-            print(f"Separación de objetos agrupados: {'activada' if usar_watershed else 'desactivada'}")
-        elif key == ord('m'):
-            mostrar_mascara = not mostrar_mascara
-            print(f"Mostrar máscara: {'activado' if mostrar_mascara else 'desactivado'}")
-        elif key == ord('c'):
+        elif key == ord('s'):  # Guardar captura
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"resultados/almendras_{timestamp}.jpg"
+            cv2.imwrite(filename, resultado)
+            print(f"Captura guardada como: {filename}")
+        elif key == ord('c'):  # Reiniciar contador
             conteo_maximo = 0
             tiempo_inicio = time.time()
             print("Contador reiniciado")
@@ -315,7 +284,7 @@ def contador_almendras_chroma():
 
 if __name__ == "__main__":
     try:
-        contador_almendras_chroma()
+        contar_almendras()
     except Exception as e:
         print(f"Error: {e}")
-        print("Comprueba que tienes OpenCV instalado: pip install opencv-python numpy")
+        print("Comprueba que tienes instalado OpenCV: pip install opencv-python numpy")
