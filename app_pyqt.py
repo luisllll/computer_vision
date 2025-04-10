@@ -298,38 +298,31 @@ class MeasurementApp(QMainWindow):
                             except Exception as e:
                                 print(f"Error processing contour: {e}")
                         
-                        # Draw detection statistics on the main frame
-                        cv2.putText(display_frame, f"Total objects: {len(filtered_contours)}", (10, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                        if self.calibration_mm_per_pixel:
-                            cv2.putText(display_frame, f"Within range: {within_range_count}", (10, 60),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                            cv2.putText(display_frame, f"Out of range: {outside_range_count}", (10, 90),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                            cv2.putText(display_frame, f"Range: {self.min_length_mm}-{self.max_length_mm} mm", (10, 150),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                            
-                            total_objects = len(filtered_contours)
-                            if total_objects > 0:
-                                percentage = (within_range_count / total_objects) * 100
-                            else:
-                                percentage = 0
-                            
-                            stats_text = (
-                                f"Total objects: {total_objects}\n"
-                                f"Within range: {within_range_count}\n"
-                                f"Out of range: {outside_range_count}\n"
-                                f"Percentage in range: {percentage:.1f}%\n"
-                                f"Range: {self.min_length_mm}-{self.max_length_mm} mm"
-                            )
-                            self.stats_label.setText(stats_text)
+                        # MODIFICACIÓN: Eliminar las estadísticas dibujadas en la imagen
+                        # Solo mantener la información de calibración
+                        
+                        # Actualizar las estadísticas en el widget externo
+                        total_objects = len(filtered_contours)
+                        if total_objects > 0:
+                            percentage = (within_range_count / total_objects) * 100
+                        else:
+                            percentage = 0
+                        
+                        stats_text = (
+                            f"Total objects: {total_objects}\n"
+                            f"Within range: {within_range_count}\n"
+                            f"Out of range: {outside_range_count}\n"
+                            f"Percentage in range: {percentage:.1f}%\n"
+                            f"Range: {self.min_length_mm}-{self.max_length_mm} mm"
+                        )
+                        self.stats_label.setText(stats_text)
                     else:
                         self.statusBar.showMessage("Error: ROI out of image bounds")
             else:
                 cv2.putText(display_frame, "No ROI selected. Press 'Select ROI'.", (10, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             
-            # Display calibration info
+            # Display calibration info (mantener esta información en la imagen)
             if self.calibration_mm_per_pixel:
                 cv2.putText(display_frame, f"Calibration: {self.calibration_mm_per_pixel:.4f} mm/px", 
                             (display_frame.shape[1] - 350, 30), 
