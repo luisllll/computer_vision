@@ -1,0 +1,55 @@
+# requirements.txt - Dependencias para Sistema YOLO Medición Almendras
+
+# ========================================
+# DEPENDENCIAS OBLIGATORIAS
+# ========================================
+
+# Interfaz gráfica
+PyQt5>=5.15.0
+
+# Procesamiento de imágenes
+opencv-python>=4.5.0
+numpy>=1.20.0
+
+# YOLO y detección de objetos
+ultralytics>=8.0.0
+
+# ========================================
+# DEPENDENCIAS RECOMENDADAS
+# ========================================
+
+# Para mejores modelos YOLO
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Procesamiento de imágenes adicional
+pillow>=8.0.0
+
+# ========================================
+# DEPENDENCIAS OPCIONALES
+# ========================================
+
+# Para exportar a Excel
+pandas>=1.3.0
+openpyxl>=3.0.0
+
+# Para análisis estadístico avanzado
+scipy>=1.7.0
+
+# Para gráficos y visualizaciones
+matplotlib>=3.5.0
+
+# Para logging avanzado
+loguru>=0.6.0
+
+# ========================================
+# INSTALACIÓN
+# ========================================
+# 
+# Instalación básica (mínima):
+# pip install PyQt5 opencv-python numpy ultralytics
+#
+# Instalación completa:
+# pip install -r requirements.txt
+#
+# ========================================
